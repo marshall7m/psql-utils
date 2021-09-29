@@ -1,3 +1,3 @@
 #!/bin/bash
 
-source "$(dirname "${BASH_SOURCE[0]}")/src/psql_utils.bash"
+source "$(dirname "${BASH_SOURCE[0]}")/src/jq_to_psql_records.bash"

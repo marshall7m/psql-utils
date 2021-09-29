@@ -1,0 +1,32 @@
+{
+    "name": "psql-utils",
+    "version": "0.0.1",
+    "description": "Helper bash functions and scripts for psql commands",
+    "homepage": "https://github.com/marshall7m/bats-utils",
+    "author": "Marshall Mamiya",
+    "repository": "github:marshall7m/bats-utils",
+    "directories": {
+      "lib": "src",
+      "tests": "tests"
+    },
+    "files": [
+      "load.bash",
+      "src"
+    ],
+    "dependencies": {
+      "bash-utils": "https://github.com/marshall7m/bash-utils"
+    },
+    "devDependencies": {
+      "bash-utils": "https://github.com/marshall7m/bash-utils",
+      "bats-utils": "https://github.com/marshall7m/bats-utils",
+      "bats": "https://github.com/bats-core/bats-core",
+      "bats-assert": "https://github.com/bats-core/bats-assert",
+      "bats-support": "https://github.com/bats-core/bats-support"
+    },
+    "keywords": [
+      "bats",
+      "bash",
+      "shell",
+      "helper"
+    ]
+  }

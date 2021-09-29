@@ -1,4 +1,5 @@
 #!/bin/bash
+source "$( cd "$( dirname "$BASH_SOURCE[0]" )" && cd "$(git rev-parse --show-toplevel)" >/dev/null 2>&1 && pwd )/node_modules/bash-utils/load.bash"
 
 table_exists() {
 	echo >&2 "FUNCNAME=$FUNCNAME"
@@ -27,17 +28,6 @@ table_exists() {
 	fi
 }
 
-bash_arr_to_psql_arr() {
-    log "FUNCNAME=$FUNCNAME" "DEBUG"
-    
-	local arr=$1
-	printf -v psql_array "'%s'," "${arr[@]//\'/\'\'}"
-	# remove the trailing ,
-	psql_array=${psql_array%,}
-
-	echo "($psql_array)"
-}
-
 jq_to_psql_records() {
 	log "FUNCNAME=$FUNCNAME" "DEBUG"
 
@@ -58,20 +48,24 @@ jq_to_psql_records() {
 		log "Table does not exists -- creating table" "DEBUG"
 
 		cols_types=$(echo "$jq_in" | jq '
-		def psql_cols(in):
+
+		def psql_type(jq_val):
 			{
-			"number": "INT", 
-			"string": "VARCHAR", 
-			"array": "ARRAY[]",
-			"boolean": "BOOL"
-			} as $psql_types
-			| if (in | type) == "array" then 
-			map(. | to_entries | map(.key + " " + (.value | type | $psql_types[.])))
+				"number": "INT", 
+				"string": "VARCHAR", 
+				"boolean": "BOOL"
+			} as $type_map
+			| (.value | type) as $jq_type
+			| if $jq_type == "array" then (if ($jq_val | map(. | type) | unique) > 1 then "TEXT[]" else "INT[]" end) else $type_map[$jq_val] end;
+		
+		def psql_cols(in):
+			if (in | type) == "array" then 
+			map(. | to_entries | map(.key + " " + psql_type(.value))
 			else
-			in | to_entries | map(.key + " " + (.value | type | $psql_types[.]))
+			in | to_entries | map(.key + " " + psql_type(.value))
 			end
-			| flatten | unique | join(", ")
-			;
+			| flatten | unique | join(", ");
+
 		psql_cols(.)
 		' | tr -d '"')
 
@@ -98,3 +92,7 @@ jq_to_psql_records() {
 	log "Loading to table" "INFO"
 	echo "$csv_table" | psql -c "COPY $table ($psql_cols) FROM STDIN DELIMITER ',' CSV"
 }
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    jq_to_psql_records "$@"
+fi
