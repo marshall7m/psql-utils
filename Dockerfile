@@ -27,5 +27,6 @@ ENV PATH="$VIRTUAL_ENV/lib/python3.9/site-packages:$PATH"
 RUN apk add --virtual .runtime \
     bash \
     jq \
+    git \
     # needed for bats --pretty formatter
     ncurses

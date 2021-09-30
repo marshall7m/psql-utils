@@ -6,13 +6,11 @@ load "${BATS_TEST_DIRNAME}/../node_modules/bats-assert/load.bash"
 load "${BATS_TEST_DIRNAME}/../node_modules/bats-utils/load.bash"
 
 setup_file() {
-    load 'common_setup'
+    load 'common_setup.bash'
 
     _common_setup
     export script_logging_level="DEBUG"
-    load 'common_setup'
 
-    _common_setup
     log "FUNCNAME=$FUNCNAME" "DEBUG"
 }
 
@@ -22,7 +20,8 @@ teardown_file() {
 }
 
 setup() {
-    # run_only_test 1
+    log "FUNCNAME=$FUNCNAME" "DEBUG"
+    # run_only_test 3
 }
 
 teardown() {
@@ -33,25 +32,28 @@ teardown() {
 
 @test "Script is runnable" {
     run jq_to_psql_records.bash
-    assert_success
 }
-
 
 @test "invalid jq input" {
     in="foo"
     table="table_$BATS_TEST_NUMBER"
     run jq_to_psql_records.bash "$in" "$table"
-    assert_success
+    assert_failure
 }
 
 @test "jq array value" {
     in=$(jq -n '
     {
         "foo": "bar",
-        "baz": ["doo"]
+        "baz": ["doo", 3]
     }
     ')
     table="table_$BATS_TEST_NUMBER"
     run jq_to_psql_records.bash "$in" "$table"
     assert_success
+
+    run psql -c "SELECT * FROM $table;"
+    assert_success
+
+    psql -c "DROP TABLE $table;"
 }

@@ -31,14 +31,38 @@ table_exists() {
 jq_to_psql_records() {
 	log "FUNCNAME=$FUNCNAME" "DEBUG"
 
-	local jq_in=$1
-	local table=$2
+	local jq_in="$1"
+	local table="$2"
 
 	if [ -z "$jq_in" ]; then
 		log "jq_in is not set" "ERROR"
 		exit 1
 	elif [ -z "$table" ]; then
 		log "table is not set" "ERROR"
+		exit 1
+	fi
+	
+	is_valid_data_type=$(echo "$jq_in" | jq '
+	if (. | type) == "array" then
+		(if (.[0] | type) == "object" then
+			true
+		else false
+		end)
+	elif (. | type) == "object" then
+        true
+    else
+		false
+	end
+	')
+
+	_=$(echo "$jq_in" | jq '.' 2> /dev/null)
+	is_jq=$?
+	
+	if [ "$is_jq" -ne 0 ] ; then
+		log "jq_in must be a jq input" "ERROR"
+		exit 1
+	elif [ "$is_valid_data_type" == false ]; then
+		log "jq_in data type is not one of the following: {} OR [{}]" "ERROR"
 		exit 1
 	fi
 
@@ -48,24 +72,32 @@ jq_to_psql_records() {
 		log "Table does not exists -- creating table" "DEBUG"
 
 		cols_types=$(echo "$jq_in" | jq '
-
 		def psql_type(jq_val):
 			{
 				"number": "INT", 
 				"string": "VARCHAR", 
 				"boolean": "BOOL"
 			} as $type_map
-			| (.value | type) as $jq_type
-			| if $jq_type == "array" then (if ($jq_val | map(. | type) | unique) > 1 then "TEXT[]" else "INT[]" end) else $type_map[$jq_val] end;
+            | (.value | type) as $jq_type
+			| if $jq_type == "array" then 
+				(jq_val | map(. | type) | unique) as $jq_arr_types
+				| if ($jq_arr_types | length) > 1 then 
+					"TEXT[]" 
+				else 
+					( if $jq_arr_types[0] == "string" then "TEXT[]" else "INT[]" end)
+				end
+			else 
+				$type_map[$jq_type]
+			end;
 		
 		def psql_cols(in):
 			if (in | type) == "array" then 
-			map(. | to_entries | map(.key + " " + psql_type(.value))
+			map(. | to_entries | map(.key + " " + psql_type(.value)))
 			else
 			in | to_entries | map(.key + " " + psql_type(.value))
 			end
 			| flatten | unique | join(", ");
-
+			
 		psql_cols(.)
 		' | tr -d '"')
 

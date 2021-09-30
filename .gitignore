@@ -6,5 +6,6 @@ __pycache__
 *tmp*
 node_modules
 /package-lock.json
+*docker-pgsql-volume*
 /yarn.lock
 /yarn-error.log
