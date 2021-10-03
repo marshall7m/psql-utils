@@ -87,7 +87,7 @@ jq_to_psql_records() {
 					( if $jq_arr_types[0] == "string" then "TEXT[]" else "INT[]" end)
 				end
 			else 
-				$type_map[$jq_type]
+				$type_map[$jq_type] // error("jq type not handled: " + $jq_type)
 			end;
 		
 		def psql_cols(in):
