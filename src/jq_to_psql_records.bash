@@ -77,7 +77,8 @@ jq_to_psql_records() {
 			| {
 				"number": "INT", 
 				"string": "VARCHAR", 
-				"boolean": "BOOL"
+				"boolean": "BOOL",
+				"null": "VARCHAR"
 			} as $type_map
 			| if ($jq_val | type) == "array" then
 				($jq_val | map(. | type) | unique) as $jq_arr_type
@@ -87,12 +88,14 @@ jq_to_psql_records() {
 					"TEXT[]"
 				elif $jq_arr_type[0] == "number" then
 					"INT[]"
+				elif $jq_arr_type[0] == null then
+					empty
 				else
 					error("jq type not handled: " + ($jq_arr_type[0] | tostring))
 				end
 			else
 				($jq_val | type) as $jq_type
-				| $type_map[$jq_type] // error("jq type not handled: " + $jq_type)	
+				| $type_map[$jq_type] // error("jq type not handled: " + ($jq_type | tostring))	
 			end
 			;
 		
@@ -108,16 +111,21 @@ jq_to_psql_records() {
 			| to_entries 
 			| map( 
 				if (.value | unique | length) == 1 then
-					.key + " " + .value[0] 
-				else 
+					.key + " " + .value[0]
+				elif (.value | unique | length) > 1 then
 					error("Detected more than one data type: " + .value)
+				else
+					error("Detected no data type")
 				end
 			)
 			| join(", ")
 			;
 		psql_cols(.)
-		' | tr -d '"')
-
+		') || exit 1
+		
+		
+		cols_types=$(echo "$cols_types" | tr -d '"')
+		
 		log "Column types: $cols_types" "DEBUG"
 		psql -c "CREATE TABLE IF NOT EXISTS $table ( $cols_types );"
 	fi

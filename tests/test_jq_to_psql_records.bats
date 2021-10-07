@@ -94,3 +94,56 @@ teardown() {
 
     psql -c "DROP TABLE $table;"
 }
+
+@test "jq object with empty array value" {
+    in=$(jq -n '
+    {
+        "foo": "bar",
+        "baz": []
+    }
+    ')
+    table="table_$BATS_TEST_NUMBER"
+    run jq_to_psql_records.bash "$in" "$table"
+    assert_failure
+
+    assert_output -p "Detected no data type"
+}
+
+@test "jq object with null value" {
+    in=$(jq -n '
+    {
+        "foo": "bar",
+        "baz": null
+    }
+    ')
+    table="table_$BATS_TEST_NUMBER"
+    run jq_to_psql_records.bash "$in" "$table"
+    assert_success
+}
+
+
+@test "jq array with empty array value" {
+    in=$(jq -n '
+    [
+        {
+            "foo": "bar",
+            "baz": []
+        },
+        {
+            "foo": "nar",
+            "baz": ["doo", "zoo"]
+        }
+    ]
+    ')
+    table="table_$BATS_TEST_NUMBER"
+
+    run jq_to_psql_records.bash "$in" "$table"
+    assert_success
+
+    assert_output -p "Column types: foo VARCHAR, baz TEXT[]"
+
+    run psql -c "SELECT * FROM $table;"
+    assert_success
+
+    psql -c "DROP TABLE $table;"
+}
