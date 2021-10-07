@@ -12,6 +12,12 @@ setup_file() {
     export script_logging_level="DEBUG"
 
     log "FUNCNAME=$FUNCNAME" "DEBUG"
+
+    psql() {
+        echo "MOCK: FUNCNAME=$FUNCNAME"
+    }
+
+    export -f psql
 }
 
 teardown_file() {
@@ -21,7 +27,7 @@ teardown_file() {
 
 setup() {
     log "FUNCNAME=$FUNCNAME" "DEBUG"
-    # run_only_test 3
+    # run_only_test 4
 }
 
 teardown() {
@@ -41,16 +47,47 @@ teardown() {
     assert_failure
 }
 
-@test "jq array value" {
+
+
+@test "jq object with array value" {
     in=$(jq -n '
     {
         "foo": "bar",
-        "baz": ["doo", 3]
+        "baz": ["daz", "zaz"]
     }
     ')
     table="table_$BATS_TEST_NUMBER"
     run jq_to_psql_records.bash "$in" "$table"
     assert_success
+
+    assert_output -p "Column types: foo VARCHAR, baz TEXT[]"
+
+    run psql -c "SELECT * FROM $table;"
+    assert_success
+
+    psql -c "DROP TABLE $table;"
+}
+
+
+@test "jq array with array value" {
+    in=$(jq -n '
+    [
+        {
+            "foo": "bar",
+            "baz": ["daz", "zaz"]
+        },
+        {
+            "foo": "nar",
+            "baz": ["doo", "zoo"]
+        }
+    ]
+    ')
+    table="table_$BATS_TEST_NUMBER"
+
+    run jq_to_psql_records.bash "$in" "$table"
+    assert_success
+
+    assert_output -p "Column types: foo VARCHAR, baz TEXT[]"
 
     run psql -c "SELECT * FROM $table;"
     assert_success

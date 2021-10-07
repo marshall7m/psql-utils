@@ -70,39 +70,55 @@ jq_to_psql_records() {
 		log "Adding to existing table" "DEBUG"
 	else
 		log "Table does not exists -- creating table" "DEBUG"
-
+		
 		cols_types=$(echo "$jq_in" | jq '
 		def psql_type(jq_val):
-			{
+			jq_val as $jq_val
+			| {
 				"number": "INT", 
 				"string": "VARCHAR", 
 				"boolean": "BOOL"
 			} as $type_map
-            | (.value | type) as $jq_type
-			| if $jq_type == "array" then 
-				(jq_val | map(. | type) | unique) as $jq_arr_types
-				| if ($jq_arr_types | length) > 1 then 
-					"TEXT[]" 
-				else 
-					( if $jq_arr_types[0] == "string" then "TEXT[]" else "INT[]" end)
+			| if ($jq_val | type) == "array" then
+				($jq_val | map(. | type) | unique) as $jq_arr_type
+				| if ($jq_arr_type | length) > 1 then
+					error("Detected more than one data type" + ($jq_arr_type | tostring))
+				elif ($jq_arr_type[0] == "string") then
+					"TEXT[]"
+				elif $jq_arr_type[0] == "number" then
+					"INT[]"
+				else
+					error("jq type not handled: " + ($jq_arr_type[0] | tostring))
 				end
-			else 
-				$type_map[$jq_type] // error("jq type not handled: " + $jq_type)
-			end;
+			else
+				($jq_val | type) as $jq_type
+				| $type_map[$jq_type] // error("jq type not handled: " + $jq_type)	
+			end
+			;
 		
 		def psql_cols(in):
-			if (in | type) == "array" then 
-			map(. | to_entries | map(.key + " " + psql_type(.value)))
+			in as $in
+			| if ($in | type) == "object" then
+				[$in]
 			else
-			in | to_entries | map(.key + " " + psql_type(.value))
+				$in
 			end
-			| flatten | unique | join(", ");
-			
+			| map( . | to_entries) | flatten
+			| reduce .[] as $d (null; .[$d.key] += [psql_type($d.value)])
+			| to_entries 
+			| map( 
+				if (.value | unique | length) == 1 then
+					.key + " " + .value[0] 
+				else 
+					error("Detected more than one data type: " + .value)
+				end
+			)
+			| join(", ")
+			;
 		psql_cols(.)
 		' | tr -d '"')
 
-		log "Columns Types: $cols_types" "DEBUG"
-
+		log "Column types: $cols_types" "DEBUG"
 		psql -c "CREATE TABLE IF NOT EXISTS $table ( $cols_types );"
 	fi
 
