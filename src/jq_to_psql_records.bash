@@ -1,8 +1,49 @@
 #!/bin/bash
 source "$( cd "$( dirname "$BASH_SOURCE[0]" )" && cd "$(git rev-parse --show-toplevel)" >/dev/null 2>&1 && pwd )/node_modules/bash-utils/load.bash"
 
+parse_args() {
+	#TODO: Create flag for setting default postgres type for undetected arrays/values and cases where arr = [] or value = null
+	# (e.g. --arr-default "TEXT[]" --val-default "VARCHAR")
+	log "FUNCNAME=$FUNCNAME" "DEBUG"
+	while (( "$#" )); do
+		case "$1" in 
+			--jq-input)
+				if [ -n "$2" ]; then
+					jq_in="$2"
+					shift 2
+				else
+					echo "Error: Argument for $1 is missing" >&2
+					exit 1
+				fi
+			;;
+			--table)
+				if [ -n "$2" ]; then
+					table="$2"
+					shift 2
+				else
+					echo "Error: Argument for $1 is missing" >&2
+					exit 1
+				fi
+			;;
+			--type-map)
+				if [ -n "$2" ]; then
+					type_map="$2"
+					shift 2
+				else
+					echo "Error: Argument for $1 is missing" >&2
+					exit 1
+				fi
+			;;
+			*)
+				echo "Unknown Option: $1"
+				exit 1
+			;;
+		esac
+	done
+}
+
 table_exists() {
-	echo >&2 "FUNCNAME=$FUNCNAME"
+	log "FUNCNAME=$FUNCNAME" "DEBUG"
 
 	local table=$1
 
@@ -31,8 +72,7 @@ table_exists() {
 jq_to_psql_records() {
 	log "FUNCNAME=$FUNCNAME" "DEBUG"
 
-	local jq_in="$1"
-	local table="$2"
+	parse_args "$@"
 
 	if [ -z "$jq_in" ]; then
 		log "jq_in is not set" "ERROR"
@@ -66,12 +106,10 @@ jq_to_psql_records() {
 		exit 1
 	fi
 
-	if table_exists "$table"; then
-		log "Adding to existing table" "DEBUG"
-	else
-		log "Table does not exists -- creating table" "DEBUG"
+	if ! table_exists "$table"; then
+		log "Table does not exists -- creating table" "INFO"
 		
-		cols_types=$(echo "$jq_in" | jq '
+		cols_types=$(echo "$jq_in" | jq --arg type_map "$type_map" '
 		def psql_type(jq_val):
 			jq_val as $jq_val
 			| {
@@ -99,28 +137,25 @@ jq_to_psql_records() {
 			end
 			;
 		
-		def psql_cols(in):
-			in as $in
-			| if ($in | type) == "object" then
-				[$in]
+		(try ($type_map | fromjson) // {}) as $type_map
+		| if (. | type) == "object" then
+			[.]
+		else
+			.
+		end
+		| map( . | to_entries) | flatten
+		| reduce .[] as $d (null; .[$d.key] += ([$type_map[$d.key] // psql_type($d.value)]))
+		| to_entries 
+		| map( 
+			if (.value | unique | length) == 1 then
+				.key + " " + .value[0]
+			elif (.value | unique | length) > 1 then
+				error("Detected more than one data type: " + .value)
 			else
-				$in
+				error("Detected no data type")
 			end
-			| map( . | to_entries) | flatten
-			| reduce .[] as $d (null; .[$d.key] += [psql_type($d.value)])
-			| to_entries 
-			| map( 
-				if (.value | unique | length) == 1 then
-					.key + " " + .value[0]
-				elif (.value | unique | length) > 1 then
-					error("Detected more than one data type: " + .value)
-				else
-					error("Detected no data type")
-				end
-			)
-			| join(", ")
-			;
-		psql_cols(.)
+		)
+		| join(", ")
 		') || exit 1
 		
 		

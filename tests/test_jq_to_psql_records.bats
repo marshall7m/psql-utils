@@ -43,7 +43,7 @@ teardown() {
 @test "invalid jq input" {
     in="foo"
     table="table_$BATS_TEST_NUMBER"
-    run jq_to_psql_records.bash "$in" "$table"
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_failure
 }
 
@@ -57,7 +57,7 @@ teardown() {
     }
     ')
     table="table_$BATS_TEST_NUMBER"
-    run jq_to_psql_records.bash "$in" "$table"
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_success
 
     assert_output -p "Column types: foo VARCHAR, baz TEXT[]"
@@ -84,7 +84,7 @@ teardown() {
     ')
     table="table_$BATS_TEST_NUMBER"
 
-    run jq_to_psql_records.bash "$in" "$table"
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_success
 
     assert_output -p "Column types: foo VARCHAR, baz TEXT[]"
@@ -103,10 +103,25 @@ teardown() {
     }
     ')
     table="table_$BATS_TEST_NUMBER"
-    run jq_to_psql_records.bash "$in" "$table"
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_failure
 
     assert_output -p "Detected no data type"
+}
+
+@test "jq object with empty array value and type map arg" {
+    in=$(jq -n '
+    {
+        "foo": "bar",
+        "baz": []
+    }
+    ')
+    table="table_$BATS_TEST_NUMBER"
+    type_map=$(jq -n '{"baz": "TEXT[]"}')
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table" --type-map "$type_map"
+    assert_success
+
+    assert_output -p "foo VARCHAR, baz TEXT[]"
 }
 
 @test "jq object with null value" {
@@ -117,7 +132,7 @@ teardown() {
     }
     ')
     table="table_$BATS_TEST_NUMBER"
-    run jq_to_psql_records.bash "$in" "$table"
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_success
 }
 
@@ -137,7 +152,38 @@ teardown() {
     ')
     table="table_$BATS_TEST_NUMBER"
 
-    run jq_to_psql_records.bash "$in" "$table"
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
+    assert_success
+
+    assert_output -p "Column types: foo VARCHAR, baz TEXT[]"
+
+    run psql -c "SELECT * FROM $table;"
+    assert_success
+
+    psql -c "DROP TABLE $table;"
+}
+
+@test "jq array with empty array value and type map arg" {
+    in=$(jq -n '
+    [
+        {
+            "foo": "bar",
+            "baz": []
+        },
+        {
+            "foo": "nar",
+            "baz": ["doo", "zoo"]
+        }
+    ]
+    ')
+    table="table_$BATS_TEST_NUMBER"
+    type_map=$(jq -n '
+    {
+        "foo": "VARCHAR"
+    }
+    ')
+
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table" --type-map "$type_map"
     assert_success
 
     assert_output -p "Column types: foo VARCHAR, baz TEXT[]"
