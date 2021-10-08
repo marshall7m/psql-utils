@@ -69,7 +69,7 @@ table_exists() {
 	fi
 }
 
-jq_to_psql_records() {
+main() {
 	log "FUNCNAME=$FUNCNAME" "DEBUG"
 
 	parse_args "$@"
@@ -105,7 +105,7 @@ jq_to_psql_records() {
 		log "jq_in data type is not one of the following: {} OR [{}]" "ERROR"
 		exit 1
 	fi
-
+	
 	if ! table_exists "$table"; then
 		log "Table does not exists -- creating table" "INFO"
 		
@@ -152,7 +152,7 @@ jq_to_psql_records() {
 			elif (.value | unique | length) > 1 then
 				error("Detected more than one data type: " + .value)
 			else
-				error("Detected no data type")
+				error("Detected no data type for column: " + .key)
 			end
 		)
 		| join(", ")
@@ -185,5 +185,5 @@ jq_to_psql_records() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    jq_to_psql_records "$@"
+    main "$@"
 fi
