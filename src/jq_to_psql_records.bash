@@ -40,6 +40,14 @@ parse_args() {
 			;;
 		esac
 	done
+
+	if [ -z "$jq_in" ]; then
+		log "--jq-input is not set" "ERROR"
+		exit 1
+	elif [ -z "$table" ]; then
+		log "--table is not set" "ERROR"
+		exit 1
+	fi
 }
 
 table_exists() {
@@ -74,14 +82,6 @@ main() {
 
 	parse_args "$@"
 
-	if [ -z "$jq_in" ]; then
-		log "jq_in is not set" "ERROR"
-		exit 1
-	elif [ -z "$table" ]; then
-		log "table is not set" "ERROR"
-		exit 1
-	fi
-	
 	is_valid_data_type=$(echo "$jq_in" | jq '
 	if (. | type) == "array" then
 		(if (.[0] | type) == "object" then
@@ -95,14 +95,8 @@ main() {
 	end
 	')
 
-	_=$(echo "$jq_in" | jq '.' 2> /dev/null)
-	is_jq=$?
-	
-	if [ "$is_jq" -ne 0 ] ; then
-		log "jq_in must be a jq input" "ERROR"
-		exit 1
-	elif [ "$is_valid_data_type" == false ]; then
-		log "jq_in data type is not one of the following: {} OR [{}]" "ERROR"
+	if [ "$is_valid_data_type" == false ]; then
+		log "--jq-input type is not an object or array of object(s)" "ERROR"
 		exit 1
 	fi
 	
@@ -162,10 +156,13 @@ main() {
 		cols_types=$(echo "$cols_types" | tr -d '"')
 		
 		log "Column types: $cols_types" "DEBUG"
+
+		log "Creating table" "DEBUG"
 		psql -c "CREATE TABLE IF NOT EXISTS $table ( $cols_types );"
 	fi
 
 	# get array of cols for psql insert/select for explicit column ordering
+	log "Getting column order" "DEBUG"
 	col_order=$(echo "$jq_in" | jq 'if (. | type) == "array" then map(keys) else keys end | flatten | unique')
 	log "Column order: $col_order" "DEBUG"
 
