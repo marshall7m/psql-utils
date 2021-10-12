@@ -103,7 +103,7 @@ main() {
 	if ! table_exists "$table"; then
 		log "Table does not exists -- creating table" "INFO"
 		
-		cols_types=$(echo "$jq_in" | jq --arg type_map "$type_map" '
+		cols_types=$(echo "$jq_in" | jq -r --arg type_map "$type_map" '
 		def psql_type(jq_val):
 			jq_val as $jq_val
 			| {
@@ -151,10 +151,7 @@ main() {
 		)
 		| join(", ")
 		') || exit 1
-		
-		
-		cols_types=$(echo "$cols_types" | tr -d '"')
-		
+				
 		log "Column types: $cols_types" "DEBUG"
 
 		log "Creating table" "DEBUG"
@@ -176,11 +173,12 @@ main() {
 	log "JQ transformed to CSV strings" "DEBUG"
 	log "$csv_table" "DEBUG"
 
-	psql_cols=$(echo "$col_order" | jq 'join(", ")' | tr -d '"')
+	psql_cols=$(echo "$col_order" | jq -r 'join(", ")')
 	log "Loading to table" "INFO"
-	echo "$csv_table" | psql -c "COPY $table ($psql_cols) FROM STDIN DELIMITER ',' CSV"
+	echo "$csv_table" | psql -c "COPY $table ($psql_cols) FROM STDIN DELIMITER ',' CSV TO STDOUT WITH NULL AS ''"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+	log "File: ${BASH_SOURCE[0]}" "DEBUG"
     main "$@"
 fi
