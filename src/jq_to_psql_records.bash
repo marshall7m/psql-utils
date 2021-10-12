@@ -174,8 +174,21 @@ main() {
 	log "$csv_table" "DEBUG"
 
 	psql_cols=$(echo "$col_order" | jq -r 'join(", ")')
-	log "Loading to table" "INFO"
-	echo "$csv_table" | psql -c "COPY $table ($psql_cols) FROM STDIN DELIMITER ',' CSV TO STDOUT WITH NULL AS ''"
+
+	log "Copying to staging table" "INFO"
+	staging_table="staging_$table"
+	echo "$csv_table" | psql -c """
+	CREATE TABLE $staging_table AS (SELECT * FROM $table WHERE 1 = 2);
+	COPY $staging_table ($psql_cols) FROM STDIN DELIMITER ',' CSV;
+	"""
+
+	log "Inserting into $table" "INFO"
+	psql -t -c """
+    INSERT INTO $table
+	SELECT *
+	FROM $staging_table
+	RETURNING row_to_json($table.*);
+    """
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
