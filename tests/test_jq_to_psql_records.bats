@@ -23,7 +23,7 @@ setup() {
     log "FUNCNAME=$FUNCNAME" "DEBUG"
 
     export table="table_$BATS_TEST_NUMBER"
-    # run_only_test 11
+    run_only_test 1
 }
 
 teardown() {
@@ -32,6 +32,53 @@ teardown() {
     teardown_test_case_tmp_dir
 
     psql -c "DROP TABLE IF EXISTS $table;"
+}
+
+@test "Insert jq array into pre-existing table with trigger" {
+
+    trigger_name="${table}_default"
+    trig_func="${table}_default_func"
+    psql -q -c """
+    CREATE TABLE $table (foo VARCHAR, baz TEXT[]);
+
+    CREATE OR REPLACE FUNCTION $trig_func() RETURNS trigger LANGUAGE plpgsql AS \$\$
+        BEGIN
+            IF NEW.foo IS NULL THEN
+                NEW.foo := 'DEFAULT';
+            END IF;
+            RETURN NEW;
+        END;
+    \$\$;
+
+    CREATE TRIGGER $trigger_name
+    BEFORE INSERT ON $table
+    FOR EACH ROW
+    WHEN (
+        NEW.foo IS NULL
+    )
+    EXECUTE PROCEDURE $trig_func();
+
+    INSERT INTO $table VALUES('cee', ARRAY['bee']);
+    """
+
+    in=$(jq -n '
+    [
+        {
+            "foo": null,
+            "baz": ["dar", "zar"]
+        },
+        {
+            "foo": "nar",
+            "baz": ["doo", "zoo"]
+        }
+    ]
+    ')
+    
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
+
+    log "Updated table:" "DEBUG"
+    psql -c "SELECT * FROM $table"
+    assert_success
 }
 
 @test "Script is runnable" {

@@ -178,26 +178,51 @@ main() {
 
 	log "Creating staging table" "INFO"
 	# WA: Using staging table since a single `COPY` statement with `FROM STDIN TO STDOUT` isn't valid
+
 	psql -q -c """
 	DO \$\$
+		DECLARE
+			staging_def TEXT;
+
 		BEGIN
+			RAISE NOTICE 'Initializing table';
 			DROP TABLE IF EXISTS $staging_table;
 			CREATE TABLE $staging_table (LIKE $table INCLUDING ALL);
 
+			RAISE NOTICE 'Setting staging identity columns to respective target identity columns next value';
 			PERFORM setval(staging_seq, nextval(target_seq))
 			FROM (
-				SELECT column_name, pg_get_serial_sequence('$staging_table', column_name) AS staging_seq
-				FROM information_schema.columns
-				WHERE table_name = '$staging_table'
-				AND is_identity = 'YES'
+				SELECT attname, pg_get_serial_sequence('$staging_table', attname) AS staging_seq
+				FROM pg_attribute
+				WHERE attrelid = '$staging_table'::regclass
+				AND attidentity != ''
 			) staging
 			JOIN (
-				SELECT column_name, pg_get_serial_sequence('$table', column_name) AS target_seq
-				FROM information_schema.columns 
-				WHERE table_name = '$table'
-				AND is_identity = 'YES'
+				SELECT attname, pg_get_serial_sequence('$table', attname) AS target_seq
+				FROM pg_attribute
+				WHERE attrelid = '$table'::regclass
+				AND attidentity != ''
 			) target
-			ON (target.column_name = staging.column_name);
+			ON (target.attname = staging.attname);
+
+			RAISE NOTICE 'Enabling triggers from target table onto staging table';
+			
+			FOR staging_def IN
+				SELECT 
+					REGEXP_REPLACE(
+						REGEXP_REPLACE(
+							pg_get_triggerdef(oid), 
+							'BEFORE\s+INSERT\s+ON\s+public.$table', 
+							'BEFORE INSERT ON public.$staging_table'
+						),
+						'CREATE\s+TRIGGER\s+',
+						'CREATE TRIGGER staging_'
+					)
+				FROM   pg_trigger t
+				WHERE  tgrelid = '$table'::regclass
+			LOOP
+				EXECUTE format('%s', staging_def);
+			END LOOP;
 		END
 	\$\$
 	"""
