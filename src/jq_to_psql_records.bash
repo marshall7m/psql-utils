@@ -78,6 +78,7 @@ table_exists() {
 }
 
 main() {
+	set -e
 	log "FUNCNAME=$FUNCNAME" "DEBUG"
 
 	parse_args "$@"
@@ -173,14 +174,41 @@ main() {
 	log "JQ transformed to CSV strings: $(printf '\n%s' $csv_table)" "DEBUG"
 
 	psql_cols=$(echo "$col_order" | jq -r 'join(", ")')
-
-	# WA: Using staging table since a single `COPY` statement with `FROM STDIN TO STDOUT` isn't valid
-	log "Copying to staging table" "INFO"
 	staging_table="staging_$table"
+
+	log "Creating staging table" "INFO"
+	# WA: Using staging table since a single `COPY` statement with `FROM STDIN TO STDOUT` isn't valid
+	psql -q -c """
+	DO \$\$
+		BEGIN
+			DROP TABLE IF EXISTS $staging_table;
+			CREATE TABLE $staging_table (LIKE $table INCLUDING ALL);
+
+			PERFORM setval(staging_seq, nextval(target_seq))
+			FROM (
+				SELECT column_name, pg_get_serial_sequence('$staging_table', column_name) AS staging_seq
+				FROM information_schema.columns
+				WHERE table_name = '$staging_table'
+				AND is_identity = 'YES'
+			) staging
+			JOIN (
+				SELECT column_name, pg_get_serial_sequence('$table', column_name) AS target_seq
+				FROM information_schema.columns 
+				WHERE table_name = '$table'
+				AND is_identity = 'YES'
+			) target
+			ON (target.column_name = staging.column_name);
+		END
+	\$\$
+	"""
+	
+	log "Copying to staging table" "INFO"
 	echo "$csv_table" | psql -q -c """
-	CREATE TABLE $staging_table AS (SELECT * FROM $table WHERE 1 = 2);
 	COPY $staging_table ($psql_cols) FROM STDIN DELIMITER ',' CSV;
 	"""
+
+	log "Staging table" "DEBUG"
+	psql -c "select * from $staging_table"
 	
 	log "Inserting into $table" "INFO"	
 	res=$(jq -n '[]')
@@ -196,6 +224,8 @@ main() {
 	echo "$res"
 
 	psql -q -c "DROP TABLE IF EXISTS $staging_table;"
+
+	set +e
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
