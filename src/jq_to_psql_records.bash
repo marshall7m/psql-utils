@@ -155,7 +155,7 @@ main() {
 		log "Column types: $cols_types" "DEBUG"
 
 		log "Creating table" "DEBUG"
-		psql -c "CREATE TABLE IF NOT EXISTS $table ( $cols_types );"
+		psql -q -c "CREATE TABLE IF NOT EXISTS $table ( $cols_types );"
 	fi
 
 	# get array of cols for psql insert/select for explicit column ordering
@@ -170,28 +170,34 @@ main() {
 	| $col_order | map($stage[.]) | @csv
 	')
 
-	log "JQ transformed to CSV strings" "DEBUG"
-	log "$csv_table" "DEBUG"
+	log "JQ transformed to CSV strings: $(printf '\n%s' $csv_table)" "DEBUG"
 
 	psql_cols=$(echo "$col_order" | jq -r 'join(", ")')
 
+	# WA: Using staging table since a single `COPY` statement with `FROM STDIN TO STDOUT` isn't valid
 	log "Copying to staging table" "INFO"
 	staging_table="staging_$table"
-	echo "$csv_table" | psql -c """
+	echo "$csv_table" | psql -q -c """
 	CREATE TABLE $staging_table AS (SELECT * FROM $table WHERE 1 = 2);
 	COPY $staging_table ($psql_cols) FROM STDIN DELIMITER ',' CSV;
 	"""
-
-	log "Inserting into $table" "INFO"
-	psql -t -c """
+	
+	log "Inserting into $table" "INFO"	
+	res=$(jq -n '[]')
+	while read record; do
+		res=$(echo "$res" | jq --arg record "$record" '. + [($record | fromjson)]')
+	done <<< $(psql -qt -c """
     INSERT INTO $table
 	SELECT *
 	FROM $staging_table
-	RETURNING row_to_json($table.*);
-    """
+	RETURNING row_to_json($table.*)
+    """)
+
+	echo "$res"
+
+	psql -q -c "DROP TABLE IF EXISTS $staging_table;"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-	log "File: ${BASH_SOURCE[0]}" "DEBUG"
     main "$@"
 fi
