@@ -232,8 +232,8 @@ main() {
 	COPY $staging_table ($psql_cols) FROM STDIN DELIMITER ',' CSV;
 	"""
 
-	log "Staging table" "DEBUG"
-	psql -c "select * from $staging_table"
+	log "Staging table:" "DEBUG"
+	log "$(psql -x -c "select * from $staging_table")" "DEBUG"
 	
 	log "Inserting into $table" "INFO"	
 	res=$(jq -n '[]')
