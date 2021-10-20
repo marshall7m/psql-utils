@@ -279,16 +279,44 @@ teardown() {
 
 }
 
-@test "Insert jq array into pre-existing table" {
+@test "Insert jq array with null primary key value into pre-existing table with null primary key trigger handling" {
     psql -q -c """
-    CREATE TABLE $table (foo VARCHAR, baz TEXT[]);
+    CREATE TABLE $table (foo VARCHAR PRIMARY KEY, baz TEXT[]);
     INSERT INTO $table VALUES('cee', ARRAY['bee']);
+    
+    CREATE OR REPLACE FUNCTION ${table}_defaults()
+        RETURNS trigger
+        LANGUAGE plpgsql AS \$\$
+            BEGIN
+                IF NEW.foo IS NULL THEN
+                    NEW.foo := 'test-' || substr(md5(random()::text), 0, 18);
+                END IF;
+                RETURN NEW;
+            END;
+        \$\$;
+
+    DROP TRIGGER IF EXISTS trig_${table}_defaults ON public.$table; 
+    CREATE TRIGGER trig_${table}_defaults
+        BEFORE INSERT ON $table
+        FOR EACH ROW
+        WHEN (
+            NEW.foo IS NULL
+        )
+        EXECUTE PROCEDURE ${table}_defaults();
+    
+    DROP TRIGGER IF EXISTS trig_${table}_dummy ON public.$table; 
+    CREATE TRIGGER trig_${table}_dummy
+        BEFORE INSERT ON $table
+        FOR EACH ROW
+        WHEN (
+            NEW.foo != NEW.foo
+        )
+        EXECUTE PROCEDURE ${table}_defaults();
     """
 
     in=$(jq -n '
     [
         {
-            "foo": "bar",
             "baz": ["dar", "zar"]
         },
         {
@@ -303,5 +331,18 @@ teardown() {
     log "Updated table:" "DEBUG"
     psql -c "SELECT * FROM $table"
 
+    assert_success
+
+    run psql -c """
+    DO \$\$
+        BEGIN 
+            ASSERT (
+                SELECT COUNT(*)
+                FROM $table
+                WHERE foo IS NOT NULL
+            ) = 3;
+        END;
+    \$\$
+    """
     assert_success
 }

@@ -171,14 +171,13 @@ main() {
 	| $col_order | map($stage[.]) | @csv
 	')
 
-	log "JQ transformed to CSV strings: $(printf '\n%s' $csv_table)" "DEBUG"
+	log "JQ transformed to CSV strings:" "DEBUG"
+	log "$csv_table" "DEBUG"
 
 	psql_cols=$(echo "$col_order" | jq -r 'join(", ")')
 	staging_table="staging_$table"
 
-	
 	log "Creating staging table" "INFO"
-	psql -c "DROP TABLE IF EXISTS res;"
 	psql -q -v staging_table="$staging_table" -v table="$table" -f "$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )/sql/create_staging_table.sql"
 
 	log "Copying to staging table" "INFO"

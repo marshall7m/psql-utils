@@ -2,7 +2,7 @@ CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VA
     RETURNS VOID AS $$
     DECLARE
         next_val INT;
-        staging_def TEXT;
+        trig_record RECORD;
         seq_name VARCHAR;
     BEGIN
         RAISE NOTICE 'Creating staging table: %s', staging_table;
@@ -12,7 +12,7 @@ CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VA
 
         RAISE NOTICE 'Setting staging identity columns to respective target identity columns next value';
         EXECUTE format('
-        CREATE TABLE res AS
+        CREATE TEMP TABLE res AS
             SELECT 
                 inc, 
                 target_seq,
@@ -59,8 +59,9 @@ CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VA
 
         RAISE NOTICE 'Enabling triggers from target table onto staging table';
         
-        FOR staging_def IN
-            SELECT 
+        FOR trig_record IN
+            SELECT
+                tgname,
                 REGEXP_REPLACE(
                     REGEXP_REPLACE(
                         pg_get_triggerdef(oid), 
@@ -69,11 +70,12 @@ CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VA
                     ),
                     'CREATE\s+TRIGGER\s+',
                     'CREATE TRIGGER staging_'
-                )
+                ) AS def
             FROM   pg_trigger t
-            WHERE  tgrelid::text = format('%s::regclass', _table)
+            WHERE  tgrelid = _table::regclass
         LOOP
-            EXECUTE format('%s', staging_def);
+            RAISE NOTICE 'Trigger name: %', trig_record.tgname;
+            EXECUTE format('%s', trig_record.def);
         END LOOP;
     END;
 $$ LANGUAGE plpgsql;
