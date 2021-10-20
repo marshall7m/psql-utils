@@ -23,7 +23,7 @@ setup() {
     log "FUNCNAME=$FUNCNAME" "DEBUG"
 
     export table="table_$BATS_TEST_NUMBER"
-    # run_only_test 1
+    # run_only_test 3
 }
 
 teardown() {
@@ -34,37 +34,21 @@ teardown() {
     psql -c "DROP TABLE IF EXISTS $table;"
 }
 
-@test "Insert jq array into pre-existing table with trigger" {
+@test "Script is runnable" {
+    run jq_to_psql_records.bash
+}
 
-    trigger_name="${table}_default"
-    trig_func="${table}_default_func"
-    psql -q -c """
-    CREATE TABLE $table (foo VARCHAR, baz TEXT[]);
+@test "invalid jq input" {
+    in="foo"
+    
+    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
+    assert_failure
+}
 
-    CREATE OR REPLACE FUNCTION $trig_func() RETURNS trigger LANGUAGE plpgsql AS \$\$
-        BEGIN
-            IF NEW.foo IS NULL THEN
-                NEW.foo := 'DEFAULT';
-            END IF;
-            RETURN NEW;
-        END;
-    \$\$;
-
-    CREATE TRIGGER $trigger_name
-    BEFORE INSERT ON $table
-    FOR EACH ROW
-    WHEN (
-        NEW.foo IS NULL
-    )
-    EXECUTE PROCEDURE $trig_func();
-
-    INSERT INTO $table VALUES('cee', ARRAY['bee']);
-    """
-
+@test "returns parsable jq output" {
     in=$(jq -n '
     [
         {
-            "foo": null,
             "baz": ["dar", "zar"]
         },
         {
@@ -73,23 +57,13 @@ teardown() {
         }
     ]
     ')
-    
-    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
+    out=$(jq_to_psql_records.bash --jq-input "$in" --table "$table")
 
-    log "Updated table:" "DEBUG"
-    psql -c "SELECT * FROM $table"
-    assert_success
-}
+    log "Out:" "DEBUG"
+    log "$out" "DEBUG"
 
-@test "Script is runnable" {
-    run jq_to_psql_records.bash
-}
-
-@test "invalid jq input" {
-    in="foo"
-    table="table_$BATS_TEST_NUMBER"
-    run jq_to_psql_records.bash --jq-input "$in" --table "$table"
-    assert_failure
+    echo "$out" | jq '.'
+    [ "$?" -eq 0 ]
 }
 
 @test "jq object with array value" {
@@ -99,7 +73,7 @@ teardown() {
         "baz": ["daz", "zaz"]
     }
     ')
-    table="table_$BATS_TEST_NUMBER"
+    
     run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_success
 
@@ -123,7 +97,7 @@ teardown() {
         }
     ]
     ')
-    table="table_$BATS_TEST_NUMBER"
+    
 
     run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_success
@@ -141,7 +115,7 @@ teardown() {
         "baz": []
     }
     ')
-    table="table_$BATS_TEST_NUMBER"
+    
     run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_failure
 
@@ -155,7 +129,7 @@ teardown() {
         "baz": []
     }
     ')
-    table="table_$BATS_TEST_NUMBER"
+    
     type_map=$(jq -n '{"baz": "TEXT[]"}')
     run jq_to_psql_records.bash --jq-input "$in" --table "$table" --type-map "$type_map"
     assert_success
@@ -170,7 +144,7 @@ teardown() {
         "baz": null
     }
     ')
-    table="table_$BATS_TEST_NUMBER"
+    
     run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_success
 }
@@ -189,7 +163,7 @@ teardown() {
         }
     ]
     ')
-    table="table_$BATS_TEST_NUMBER"
+    
 
     run jq_to_psql_records.bash --jq-input "$in" --table "$table"
     assert_success

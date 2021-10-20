@@ -178,8 +178,8 @@ main() {
 	staging_table="staging_$table"
 
 	log "Creating staging table" "INFO"
-	psql -q -v staging_table="$staging_table" -v table="$table" -f "$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )/sql/create_staging_table.sql"
-
+	psql -q -t -v staging_table="$staging_table" -v table="$table" -f "$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )/sql/create_staging_table.sql" > /dev/null
+	
 	log "Copying to staging table" "INFO"
 	echo "$csv_table" | psql -q -c """
 	COPY $staging_table ($psql_cols) FROM STDIN DELIMITER ',' CSV;
@@ -198,7 +198,7 @@ main() {
 	FROM $staging_table
 	RETURNING row_to_json($table.*)
     """)
-
+	
 	echo "$res"
 
 	psql -q -c "DROP TABLE IF EXISTS $staging_table;"
