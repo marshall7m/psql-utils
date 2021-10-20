@@ -194,6 +194,7 @@ main() {
 		res=$(echo "$res" | jq --arg record "$record" '. + [($record | fromjson)]')
 	done <<< $(psql -qt -c """
     INSERT INTO $table
+	OVERRIDING SYSTEM VALUE
 	SELECT *
 	FROM $staging_table
 	RETURNING row_to_json($table.*)

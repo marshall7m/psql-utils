@@ -1,7 +1,7 @@
 CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VARCHAR)
     RETURNS VOID AS $$
     DECLARE
-        next_val INT;
+        id_rec RECORD;
         trig_record RECORD;
         seq_name VARCHAR;
     BEGIN
@@ -40,10 +40,8 @@ CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VA
             RAISE NOTICE 'Sequence table: %', seq_name;
             EXECUTE format('
             SELECT
-               CASE
-                    WHEN seq.is_called THEN setval(res.staging_seq, seq.last_value + res.inc)
-                    ELSE setval(res.staging_seq, seq.last_value) 
-                END
+               setval(res.staging_seq, seq.last_value) AS curr_val,
+               seq.last_value + res.inc AS next_val
             FROM res
             JOIN (
                 SELECT
@@ -53,8 +51,9 @@ CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VA
                 FROM %I
             ) seq
             ON (res.target_seq = seq.seq_name)', seq_name, seq_name::regclass)
-            INTO next_val;
-            RAISE NOTICE 'Next value: %', next_val;
+            INTO id_rec;
+            RAISE NOTICE 'Current value: %', id_rec.curr_val;
+            RAISE NOTICE 'Next value: %', id_rec.next_val;
         END LOOP;
 
         RAISE NOTICE 'Enabling triggers from target table onto staging table';
