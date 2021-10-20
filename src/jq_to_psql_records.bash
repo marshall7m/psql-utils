@@ -176,57 +176,11 @@ main() {
 	psql_cols=$(echo "$col_order" | jq -r 'join(", ")')
 	staging_table="staging_$table"
 
-	log "Creating staging table" "INFO"
-	# WA: Using staging table since a single `COPY` statement with `FROM STDIN TO STDOUT` isn't valid
-
-	psql -q -c """
-	DO \$\$
-		DECLARE
-			staging_def TEXT;
-
-		BEGIN
-			RAISE NOTICE 'Initializing table';
-			DROP TABLE IF EXISTS $staging_table;
-			CREATE TABLE $staging_table (LIKE $table INCLUDING ALL);
-
-			RAISE NOTICE 'Setting staging identity columns to respective target identity columns next value';
-			PERFORM setval(staging_seq, nextval(target_seq))
-			FROM (
-				SELECT attname, pg_get_serial_sequence('$staging_table', attname) AS staging_seq
-				FROM pg_attribute
-				WHERE attrelid = '$staging_table'::regclass
-				AND attidentity != ''
-			) staging
-			JOIN (
-				SELECT attname, pg_get_serial_sequence('$table', attname) AS target_seq
-				FROM pg_attribute
-				WHERE attrelid = '$table'::regclass
-				AND attidentity != ''
-			) target
-			ON (target.attname = staging.attname);
-
-			RAISE NOTICE 'Enabling triggers from target table onto staging table';
-			
-			FOR staging_def IN
-				SELECT 
-					REGEXP_REPLACE(
-						REGEXP_REPLACE(
-							pg_get_triggerdef(oid), 
-							'BEFORE\s+INSERT\s+ON\s+public.$table', 
-							'BEFORE INSERT ON public.$staging_table'
-						),
-						'CREATE\s+TRIGGER\s+',
-						'CREATE TRIGGER staging_'
-					)
-				FROM   pg_trigger t
-				WHERE  tgrelid = '$table'::regclass
-			LOOP
-				EXECUTE format('%s', staging_def);
-			END LOOP;
-		END
-	\$\$
-	"""
 	
+	log "Creating staging table" "INFO"
+	psql -c "DROP TABLE IF EXISTS res;"
+	psql -q -v staging_table="$staging_table" -v table="$table" -f "$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )/sql/create_staging_table.sql"
+
 	log "Copying to staging table" "INFO"
 	echo "$csv_table" | psql -q -c """
 	COPY $staging_table ($psql_cols) FROM STDIN DELIMITER ',' CSV;
