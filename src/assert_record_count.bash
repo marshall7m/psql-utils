@@ -4,17 +4,27 @@ source "$( cd "$( dirname "$BASH_SOURCE[0]" )" && cd "$(git rev-parse --show-top
 source "$( cd "$( dirname "$BASH_SOURCE[0]" )" && cd "$(git rev-parse --show-toplevel)" >/dev/null 2>&1 && pwd )/node_modules/bats-assert/load.bash"
 
 
-parse_args() {
-    declare -gA args
+assert_record_count() {
+    declare -A args
     while (( "$#" )); do
         case "$1" in
             --table)
-                table="$2"
-                shift 2
+                if [ -n "$2" ]; then
+					table="$2"
+					shift 2
+				else
+					echo "Error: Argument for $1 is missing" >&2
+					exit 1
+				fi
             ;;
             --assert-count)
-                assert_count="$2"
-                shift 2
+                if [ -n "$2" ]; then
+					assert_count="$2"
+					shift 2
+				else
+					echo "Error: Argument for $1 is missing" >&2
+					exit 1
+				fi
             ;;
             --*)
                 args[$(echo "${1:2}" | tr '-' '_' )]="$2"
@@ -22,10 +32,11 @@ parse_args() {
             ;;
         esac
     done
-}
 
-main() {
-    parse_args "$@"
+    if [ -z "$assert_count" ]; then
+        log "--assert_count is not set" "ERROR"
+        exit 1
+    fi
 
     count=0
     for key in "${!args[@]}"; do
@@ -54,5 +65,5 @@ EOF
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
+    assert_record_count "$@"
 fi

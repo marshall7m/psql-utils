@@ -43,12 +43,12 @@ teardown() {
 }
 
 @test "Script is runnable" {
-    run assert_record_count.bash
+    run assert_record_count
 }
 
 @test "Query meets conditions" {
 
-    run assert_record_count.bash --table "$table" --assert-count 1 \
+    run assert_record_count --table "$table" --assert-count 1 \
         --bar "'baz'" \
         --foo "'zoo koo'" \
         --num 4 \
@@ -59,7 +59,7 @@ teardown() {
 
 @test "Query doesn't conditions" {
 
-    run assert_record_count.bash --table "$table" --assert-count 1 \
+    run assert_record_count --table "$table" --assert-count 1 \
         --bar "'baz'" \
         --foo "'zoo koo'" \
         --num 1 \
