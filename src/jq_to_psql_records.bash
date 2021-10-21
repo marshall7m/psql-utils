@@ -78,6 +78,7 @@ table_exists() {
 }
 
 main() {
+	trap 'psql -q -c "DROP TABLE IF EXISTS $staging_table CASCADE;"' EXIT
 	set -e
 	log "FUNCNAME=$FUNCNAME" "DEBUG"
 
@@ -201,8 +202,6 @@ main() {
     """)
 	
 	echo "$res"
-
-	psql -q -c "DROP TABLE IF EXISTS $staging_table;"
 
 	set +e
 }

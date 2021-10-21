@@ -23,7 +23,7 @@ setup() {
     log "FUNCNAME=$FUNCNAME" "DEBUG"
 
     export table="table_$BATS_TEST_NUMBER"
-    # run_only_test 1
+    # run_only_test 11
 }
 
 teardown() {
@@ -31,7 +31,7 @@ teardown() {
 
     teardown_test_case_tmp_dir
 
-    psql -c "DROP TABLE IF EXISTS $table;"
+    psql -c "DROP TABLE IF EXISTS $table CASCADE;"
 }
 
 @test "Script is runnable" {
@@ -287,22 +287,28 @@ teardown() {
 
     assert_success
     
-    log "Assert inserted identity column values are incremented properly" "DEBUG"
     run psql -c """
     DO \$\$
-    BEGIN
-        ASSERT (
-            SELECT COUNT(*)
-            FROM (
-                SELECT DISTINCT id
+        BEGIN
+            RAISE NOTICE 'Assert all rows were inserted';
+            ASSERT (
+                SELECT COUNT(*)
                 FROM $table
-            ) AS temp
-        ) = 3;
-    END;
+            ) = 3;
+
+            RAISE NOTICE 'Assert inserted identity column values are incremented properly';
+            ASSERT (
+                SELECT last_value
+                FROM ${table}_id_seq
+            ) = 3;
+            ASSERT (
+                SELECT last_value
+                FROM ${table}_second_id_seq
+            ) = 30;
+        END;
     \$\$ LANGUAGE plpgsql;
     """
     assert_success
-
 }
 
 @test "Insert jq array with null primary key value into pre-existing table with null primary key trigger handling" {

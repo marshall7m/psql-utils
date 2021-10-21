@@ -3,57 +3,32 @@ CREATE OR REPLACE FUNCTION create_staging_table(staging_table VARCHAR, _table VA
     DECLARE
         id_rec RECORD;
         trig_record RECORD;
-        seq_name VARCHAR;
+        seq_rec RECORD;
     BEGIN
         RAISE NOTICE 'Creating staging table: %s', staging_table;
         EXECUTE format('
         DROP TABLE IF EXISTS %1$s;
-        CREATE TABLE %1$s (LIKE %2$s INCLUDING ALL)', staging_table, _table);
+        --exclude indexes so staging table contains no identity column that will conflict with altering the default
+        CREATE TABLE %1$s (LIKE %2$s INCLUDING DEFAULTS INCLUDING CONSTRAINTS)', staging_table, _table);
 
-        RAISE NOTICE 'Setting staging identity columns to respective target identity columns next value';
+        RAISE NOTICE 'Mounting identity column sequences to staging table';
+
         EXECUTE format('
-        CREATE TEMP TABLE res AS
+        CREATE TEMP TABLE res AS 
             SELECT 
-                inc, 
-                target_seq,
-                staging_seq
-            FROM (
-                SELECT seqrelid, seqincrement AS inc 
-                FROM pg_sequence
-            ) seq
-            JOIN (
-                SELECT 
-                    attname,
-                    pg_get_serial_sequence(''%1$s'', attname) AS target_seq,
-                    pg_get_serial_sequence(''%2$I'', attname) AS staging_seq,
-                    pg_get_serial_sequence(''%1$s'', attname)::regclass::oid AS seq_oid
-                FROM pg_attribute
-                WHERE attrelid = ''%1$I''::regclass
-                AND pg_get_serial_sequence(''%1$s'', attname) IS NOT NULL
-                AND attidentity != ''''
-            ) attr
-            ON (seq.seqrelid = attr.seq_oid)
-        ', _table, staging_table);
+                attname,
+                pg_get_serial_sequence(''%1$s'', attname) AS seq
+            FROM pg_attribute
+            WHERE attrelid = ''%1$I''::regclass
+            AND pg_get_serial_sequence(''%1$s'', attname) IS NOT NULL
+            AND attidentity != ''''
+        ', _table);
 
-        FOR seq_name IN (SELECT target_seq FROM res)
+        FOR seq_rec IN (SELECT * FROM res)
         LOOP
-            RAISE NOTICE 'Sequence table: %', seq_name;
-            EXECUTE format('
-            SELECT
-               setval(res.staging_seq, seq.last_value) AS curr_val,
-               seq.last_value + res.inc AS next_val
-            FROM res
-            JOIN (
-                SELECT
-                    ''%s'' AS seq_name,
-                    is_called,
-                    last_value
-                FROM %I
-            ) seq
-            ON (res.target_seq = seq.seq_name)', seq_name, seq_name::regclass)
-            INTO id_rec;
-            RAISE NOTICE 'Current value: %', id_rec.curr_val;
-            RAISE NOTICE 'Next value: %', id_rec.next_val;
+            RAISE NOTICE 'Sequence: %', seq_rec.seq;
+            RAISE NOTICE 'Column: %', seq_rec.attname;
+            EXECUTE format('ALTER TABLE %I ALTER COLUMN %I SET DEFAULT nextval(''%s'');', staging_table, seq_rec.attname, seq_rec.seq);
         END LOOP;
 
         RAISE NOTICE 'Enabling triggers from target table onto staging table';
